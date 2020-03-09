@@ -25,9 +25,10 @@ ggplot(regdat_, aes(year, log(1 + effort))) +
 
 ggsave("figures/effort_gear_trends.png", width=10, height=10)
 
+
 # Simple regression analysis
-regdat2 <- drop_na(select(regdat, year, region, species, effort, coopInt_sum))
-mod2 <- felm(log(1 + effort) ~ coopInt_sum | species + year + region, data = regdat2)
+regdat2 <- drop_na(select(regdat, year, region, species, effort, coopInt_sum, coop_sum, conf_sum))
+mod2 <- felm(log(1 + effort) ~ conf_sum | species + year + region, data = regdat2)
 summary(mod2)
 
 # Get region residuals

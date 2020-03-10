@@ -1,5 +1,9 @@
 library(tidyverse)
 library(openxlsx)
+library(lubridate)
+
+# install.packages("readxl")
+library(readxl)
 
 # Set working directory
 setwd("~/Projects/Puerto_Rico_Coop-Conf-EDA/")
@@ -49,6 +53,33 @@ View(pdat2)
 
 
 # -----------------------------------------------------------------------------------------
+# Gasoline prices
+gdat <- read_csv("https://oregonstate.box.com/shared/static/xys7i7tnu6d364yzrcbgt1kr21fvef29.csv")
+
+gdat$month <- substr(gdat$date, 1, 3)
+gdat$year <- substr(gdat$date, 5, 8)
+
+gdat1 <- gdat %>% 
+  group_by(year) %>% 
+  summarise(gprices = sum(prices))
+
+
+# -----------------------------------------------------------------------------------------
+# Puerto Rico GDP
+gdpdat <- read_csv("https://oregonstate.box.com/shared/static/47jk0ia85kq79hx8pv29s673qvha87c3.csv")
+gdpdat <- filter(gdpdat, `Country Name` == "Puerto Rico")
+gdpdat <- select(gdpdat, -c(`Country Code`, `Indicator Name`, `Indicator Code`))
+
+gdpdat1 <- gather(gdpdat, -c(`Country Name`), key = year, value=gdp)
+gdpdat1 <- select(gdpdat1, year, gdp)
+
+
+# -----------------------------------------------------------------------------------------
+# Puerto Rico Wind data
+
+wdat <- read_csv("https://oregonstate.box.com/shared/static/6yxpd84e1olx7vzprspsitbb34m7qs5n.csv")
+wdat
+
 
 
 
@@ -105,7 +136,7 @@ summary(mod)
 
 
 
-
+# ----------------------------------------------------------------
 # Import conflict/coop data
 idat <- read.xlsx("https://oregonstate.box.com/shared/static/qrg42kvnpcrkfbskns9f9jc2fgx6cuut.xlsx", detectDates = TRUE)
 
@@ -120,12 +151,12 @@ for (i in 1:nrow(idat)){
   nregions <- strsplit(indat$DNER_Districts, ",")
   
   odat <- data.frame()
-  for (j in c("east", "west", "north", "south")){
+  for (j in nregions[[1]]){
     begDate <- paste0(substr(indat$StartDate, 1, 7), "-01")
     endDate <- paste0(substr(indat$EndDate, 1, 7), "-01")
     if (begDate <= endDate){
       int_date <- seq(as.Date(begDate), as.Date(endDate), by="month")
-      ndat <- data.frame(date = int_date, region = j, aggIS = indat$Agg_Intensity_Score, CoopCon = indat$CoopCon)
+      ndat <- data.frame(eventID = indat$EventID, date = int_date, region = j, aggIS = indat$Intensity_Score, CoopCon = indat$CoopCon)
       odat <- rbind(odat, ndat)
     }
     
@@ -176,21 +207,52 @@ ggplot(pccdat1, aes(year, value, fill=con_coop))+
   scale_x_continuous(breaks = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019)) +
   NULL
 
+# --------------------------------------------------------------------------
+# Merge in data before modeling check
+
+# Merge in conflict data
 ccdat1$year <- as.character(ccdat1$year)
 regdat <- left_join(dat4, ccdat1, by = c("year", "region"))
+
+# Merge in gas prices
+regdat <- left_join(regdat, gdat1, by = "year")
+
+# Merge in GDP
+regdat <- left_join(regdat, gdpdat1, by = "year")
 
 # cc = conflict/coop ration
 # Increase in cc causes a decline in revenue
 regdat$ccdiv <- (regdat$con_sum/regdat$coop_sum)
+regdat$ccdiv <- ifelse(is.infinite(regdat$ccdiv), 0, regdat$ccdiv)
 
-regdat$ccdiv <- abs(regdat$int_con_sum)/regdat$int_coop_sum
+# regdat$ccdiv <- regdat$int_con_sum/regdat$int_coop_sum
+# regdat$ccdiv <- ifelse(is.infinite(regdat$ccdiv), 0, regdat$ccdiv)
+
+regdat$year <- as.numeric(regdat$year)
+
 
 # Simple linear model
-mod <- lm(log(rev_sum) ~ ccdiv + factor(year) + factor(region), data = regdat)
+mod <- lm(log(1 + rev_sum) ~ ccdiv + factor(year) + factor(region), data = regdat)
 summary(mod)
 
 # Get effect
-cceffect <- mod$coefficients[2] * regdat$ccdiv
+cceffect <- (abs(mod$coefficients[2])*regdat$rev_sum)
+
+cceffect
+
+# Marginal effect
+me <- ((exp(mod$coefficients[2]) - 1))
+#   ccdiv  
+# -37.19588 (%)
+
+# Explained conflict in effort
+cedat <- data.frame(conflict_effect = abs(me*regdat$ccdiv*regdat$rev_sum), year = regdat$year, region = regdat$region)
+ggplot(cedat, aes(year, conflict_effect)) + 
+  geom_bar(stat='identity') +
+  scale_x_continuous(breaks = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019))
+
+
+cedat$conflict_effect/regdat$rev_sum
 
 # Build data frame of predictions
 preddat <- data.frame(peffort = predict(mod), cceffect = cceffect, region = regdat$region, year = regdat$year)
@@ -199,7 +261,7 @@ preddat <- data.frame(peffort = predict(mod), cceffect = cceffect, region = regd
 preddat$peffort_total <- preddat$peffort + residuals(mod)
 
 # Remove effect from conf/coop (share of conflict)
-preddat$peffort_cc <- preddat$peffort + residuals(mod) - preddat$cceffect
+preddat$peffort_cc <- preddat$peffort - preddat$cceffect
 
 ggplot(preddat, aes(year, peffort_total, color=region, group=region)) + 
   geom_point() + 
@@ -210,6 +272,7 @@ ggplot(preddat, aes(year, peffort_total, color=region, group=region)) +
   facet_wrap(~region) +
   theme(legend.position = "none") +
   labs(x=NULL, y="Log(Total Revenue)") +
+  ylim(0, max(preddat$peffort_total)) +
   NULL
 
 
@@ -223,73 +286,10 @@ ccrev$diff_peffect_cc <- exp(ccrev$peffort - ccrev$peffect_cc)
 
 ggplot(ccrev, aes(year, diff_peffect_cc)) + geom_bar(stat="identity")
 
-  
+
 ggplot(preddat, aes(year, exp(abs(cceffect)), fill=region)) + geom_bar(stat="identity")
 
 
 
-# Checl begDate is <= endDate
-for (i in 1:nrow(idat)){
-  indat <- idat[i, ]
-  record_check <- as.Date(indat$StartDate) <= as.Date(indat$EndDate)
-  if (record_check == "FALSE"){
-    print(paste0(i, "-", as.Date(indat$StartDate) <= as.Date(indat$EndDate)))
-}}
-
-ndat
-
-
-# Get specific columns
-idat <- select(idat, AggYearStart, AggYearEnd, DNER_Districts, CoopCon, CoopConIntensity, WBDisPR, LandName)
-
-head(idat)[1:5]
-tail(idat)[1:5]
-
-idat$coop <- ifelse(idat$CoopCon == "coop", 1, 0)
-idat$conf <- ifelse(idat$CoopCon == "con", 1, 0)
-
-
-# Aggregate counts for each year, region
-idat2 <- idat %>% 
-  filter(DNER_Districts %in% c("north", "south", "east", "west")) %>% 
-  group_by(AggYearStart, DNER_Districts) %>% 
-  summarise(CoopInt_sum = sum(CoopConIntensity, na.rm=TRUE),
-            CoopInt_mean = mean(CoopConIntensity, na.rm=TRUE),
-            coop_sum = sum(coop, na.rm=TRUE),
-            conf_sum = sum(conf, na.rm=TRUE))
-
-names(idat2) <- c("year", "region", "coopInt_sum", "coopInt_mean", "coop_sum", "conf_sum")
-
-# Convert long region to abbr.
-idat2$region <- ifelse(idat2$region == "north", "N", 
-                       ifelse(idat2$region == "east", "E",
-                              ifelse(idat2$region == "south", "S", 
-                                     ifelse(idat2$region == "west", "W", idat2$region))))
-
-idat2$year <- as.character(idat2$year)
-
-
-# Remove last two columns that year and geartype
-dat <- dat[-( (nrow(dat) - 1):nrow(dat)), ]
-
-# Rename column one
-names(dat)[1] <- "species"
-
-
-# Gather "tidy" data
-dat2 <- gather(dat, key = year_region, value = effort, -species)
-
-# New columns: year and gear type
-dat2$year <- substr(dat2$year_region, 1, 4)
-dat2$region <- substr(dat2$year_region, 6, 6)
-
-# Reorder dat2
-dat2 <- select(dat2, year, region, species, effort)
-
-
-regdat <- left_join(dat2, idat2, by = c("year", "region"))
-
 # Save Regression Data
 write_csv(regdat, "data/effort_region_conflict_reg_data.csv")
-
-# 

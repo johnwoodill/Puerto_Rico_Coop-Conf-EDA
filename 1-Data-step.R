@@ -1,6 +1,7 @@
 library(tidyverse)
 library(openxlsx)
 library(lubridate)
+library(rnoaa)
 
 # install.packages("readxl")
 library(readxl)
@@ -15,9 +16,6 @@ region_convert <- function(region){
   if (region == "north") return("N")
   if (region == "south") return("S")
   }
-
-
-
 
 
 # -----------------------------------------------------
@@ -199,7 +197,7 @@ ccdat1 <- ccdat %>%
 pccdat1 <- gather(ccdat1, key = con_coop, value=value, -year, -region)
 
 
-pccdat1 <- filter(pccdat1, year >= 2010)
+pccdat1 <- filter(pccdat1, year >= 2010 & con_coop %in% c("con_sum", "coop_sum"))
 ggplot(pccdat1, aes(year, value, fill=con_coop))+ 
   geom_bar(stat="identity") + 
   labs(x=NULL, y="Number of Events (months)") + 
@@ -238,7 +236,7 @@ summary(mod)
 # Get effect
 cceffect <- (abs(mod$coefficients[2])*regdat$rev_sum)
 
-cceffect
+
 
 # Marginal effect
 me <- ((exp(mod$coefficients[2]) - 1))
@@ -249,10 +247,22 @@ me <- ((exp(mod$coefficients[2]) - 1))
 cedat <- data.frame(conflict_effect = abs(me*regdat$ccdiv*regdat$rev_sum), year = regdat$year, region = regdat$region)
 ggplot(cedat, aes(year, conflict_effect)) + 
   geom_bar(stat='identity') +
+  labs(x=NULL, y="Conflict Effort (Revenue)") +
+  scale_x_continuous(breaks = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019))
+
+# Get percentage of conflict/revenue
+pcceffect <-cedat$conflict_effect/regdat$rev_sum
+
+pcdat <- data.frame(year = regdat$year, region = regdat$region, pcceffect = pcceffect)
+
+ggplot(pcdat, aes(year, pcceffect, color=region)) + 
+  geom_point() + 
+  geom_line() + 
+  facet_wrap(~region, scales="free") +
+  labs(x=NULL, y="Percentage of Revenue \n Explained by Conflict") +
   scale_x_continuous(breaks = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019))
 
 
-cedat$conflict_effect/regdat$rev_sum
 
 # Build data frame of predictions
 preddat <- data.frame(peffort = predict(mod), cceffect = cceffect, region = regdat$region, year = regdat$year)
@@ -287,9 +297,12 @@ ccrev$diff_peffect_cc <- exp(ccrev$peffort - ccrev$peffect_cc)
 ggplot(ccrev, aes(year, diff_peffect_cc)) + geom_bar(stat="identity")
 
 
-ggplot(preddat, aes(year, exp(abs(cceffect)), fill=region)) + geom_bar(stat="identity")
-
-
+ggplot(regdat, aes(year, ccdiv, fill=region)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~region, scale="free") +
+  labs(x=NULL, y="Conflict/Cooperation Ratio") +
+  scale_x_continuous(breaks = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019))
+  NULL
 
 # Save Regression Data
 write_csv(regdat, "data/effort_region_conflict_reg_data.csv")

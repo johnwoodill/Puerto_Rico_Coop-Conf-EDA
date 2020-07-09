@@ -132,17 +132,11 @@ mod <- felm(log(1 + rev_sum) ~ factor(region)| year, data = dat4)
 summary(mod)
 
 
-
-
 # ----------------------------------------------------------------
 # Import conflict/coop data
 idat <- read.xlsx("https://oregonstate.box.com/shared/static/qrg42kvnpcrkfbskns9f9jc2fgx6cuut.xlsx", detectDates = TRUE)
 
-
-test <- idat[3, ]
-
-i = 3
-
+# Split up regions and events between start and end
 retdat <- data.frame()
 for (i in 1:nrow(idat)){
   indat <- idat[i, ]
@@ -170,6 +164,7 @@ ccdat$year <- year(ccdat$date)
 
 # Unfactor region
 ccdat$region <- as.character(ccdat$region)
+ccdat$region <- gsub(" ", "", ccdat$region)
 
 # record region to individual letter
 ccdat$region <- ifelse(ccdat$region == "east", "E", ccdat$region)
@@ -198,11 +193,13 @@ pccdat1 <- gather(ccdat1, key = con_coop, value=value, -year, -region)
 
 
 pccdat1 <- filter(pccdat1, year >= 2010 & con_coop %in% c("con_sum", "coop_sum"))
+
 ggplot(pccdat1, aes(year, value, fill=con_coop))+ 
   geom_bar(stat="identity") + 
   labs(x=NULL, y="Number of Events (months)") + 
   theme_bw() +
   scale_x_continuous(breaks = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019)) +
+  facet_wrap(~region) +
   NULL
 
 # --------------------------------------------------------------------------

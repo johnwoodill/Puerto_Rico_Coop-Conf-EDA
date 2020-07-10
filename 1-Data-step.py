@@ -163,3 +163,65 @@ if __name__ == "__main__":
     results = compute([delayed(get_wind)(g) for g in lst_])
     wind_dat = pd.concat([d for d in results[0][:]]).reset_index(drop=True)
     wind_dat.to_csv('data/PR_Wind_daily_regional_2010-2019', index=False)
+
+
+    ### Hurricane data
+    # August 2014; August 2015; Sept 2017; July 2018; August 2019; Sept 2019
+    hurr_events = ['2014-08', '2015-08', '2017-09', '2018-07', '2019-08', '2019-09']
+    dates = [i.strftime("%Y-%m") for i in pd.date_range(start="2010-01-01", end="2019-12-01", freq='MS')]
+    hurr_dat = pd.DataFrame({'date': dates, "hurricane": 0})
+    hurr_dat = hurr_dat.assign(hurricane = np.where(hurr_dat['date'].isin(hurr_events), 1, 0))
+    hurr_dat.to_csv('data/PR_Hurricane_daily_regional_2010-2019', index=False)
+    
+
+
+
+
+
+    ### -------------------------------------------------------------------------------------------
+    ### Annual estimates
+
+    ### Merge data into panel set
+    sst = pd.read_csv('./data/PR_SST_daily_regional_2010-2019.csv', index_col=False)
+    chl = pd.read_csv('data/PR_CHL_daily_regional_2010_2019.csv', index_col=False)
+    wind = pd.read_csv('data/PR_Wind_daily_regional_2010-2019', index_col=False)
+    hurr = pd.read_csv('data/PR_Hurricane_daily_regional_2010-2019', index_col=False)
+
+    # SST
+    sst = sst.assign(month = pd.to_datetime(sst['date']).dt.month, year = pd.to_datetime(sst['date']).dt.year)
+    sst = sst.groupby(['year', 'region']).agg({'sst': 'mean'}).reset_index()
+    
+    # CHL
+    chl = chl.groupby(['year', 'region']).agg({'chlor_a': 'mean'}).reset_index()
+
+    # Wind
+    wind = wind.assign(month = pd.to_datetime(wind['date']).dt.month, year = pd.to_datetime(wind['date']).dt.year)
+    wind = wind.groupby(['year', 'region']).agg({'WSPD': 'mean'}).reset_index()
+
+    # Hurricane
+    hurr = hurr.assign(month = pd.to_datetime(hurr['date']).dt.month, year = pd.to_datetime(hurr['date']).dt.year)
+    hurr['hurricane'] = np.where(hurr['hurricane'] >= 1, 1, 0)
+    hurr
+
+    # Regression data
+    regdat = pd.read_csv('data/effort_region_conflict_reg_data.csv')
+    regdat = regdat.groupby(['year', 'region']).agg({'effort': 'sum', 'coop_sum': 'sum', 'conf_sum': 'sum'}).reset_index()
+    
+    
+    regdat['cc_ratio'] = regdat['conf_sum'] / regdat['coop_sum']
+
+    regdat = regdat.assign(cc_ratio = np.where(regdat['coop_sum'] == 0, 0, regdat['cc_ratio']))
+    
+    regdat['region'] = np.where(regdat['region'] == 'E', 'East', regdat['region'])
+    regdat['region'] = np.where(regdat['region'] == 'W', 'West', regdat['region'])
+    regdat['region'] = np.where(regdat['region'] == 'N', 'North', regdat['region'])
+    regdat['region'] = np.where(regdat['region'] == 'S', 'South', regdat['region'])        
+    regdat = regdat[['year', 'region', 'effort', 'cc_ratio']]
+
+    # Bind data
+    regdat = regdat.merge(sst, how='left', on=['year', 'region'])
+    regdat = regdat.merge(chl, how='left', on=['year', 'region'])
+    regdat = regdat.merge(wind, how='left', on=['year', 'region'])
+    regdat = regdat.merge(hurr, how='left', on=['year'])
+
+    regdat.to_csv("data/PR_regdat.csv", index=False)

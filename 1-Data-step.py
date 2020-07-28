@@ -186,6 +186,8 @@ if __name__ == "__main__":
     chl = pd.read_csv('data/PR_CHL_daily_regional_2010_2019.csv', index_col=False)
     wind = pd.read_csv('data/PR_Wind_daily_regional_2010-2019', index_col=False)
     hurr = pd.read_csv('data/PR_Hurricane_daily_regional_2010-2019', index_col=False)
+    noi = pd.read_csv('data/cciea_OC_NOI.csv', index_col=False, skiprows=1, usecols=[0, 1])
+    
 
     # SST
     sst = sst.assign(month = pd.to_datetime(sst['date']).dt.month, year = pd.to_datetime(sst['date']).dt.year)
@@ -201,7 +203,17 @@ if __name__ == "__main__":
     # Hurricane
     hurr = hurr.assign(month = pd.to_datetime(hurr['date']).dt.month, year = pd.to_datetime(hurr['date']).dt.year)
     hurr['hurricane'] = np.where(hurr['hurricane'] >= 1, 1, 0)
-    hurr
+    
+    # NOI
+    noi.columns = ['date', 'noi']
+    noi = noi.assign(month = pd.to_datetime(noi['date']).dt.month, year = pd.to_datetime(noi['date']).dt.year)
+    noi = noi[noi['year'] >= 2010].groupby('year').agg({'noi': 'sum'}).reset_index()
+
+
+
+
+
+
 
     # Regression data
     regdat = pd.read_csv('data/effort_region_conflict_reg_data.csv')
@@ -223,5 +235,7 @@ if __name__ == "__main__":
     regdat = regdat.merge(chl, how='left', on=['year', 'region'])
     regdat = regdat.merge(wind, how='left', on=['year', 'region'])
     regdat = regdat.merge(hurr, how='left', on=['year'])
+    regdat = regdat.merge(noi, how='left', on=['year'])
+
 
     regdat.to_csv("data/PR_regdat.csv", index=False)

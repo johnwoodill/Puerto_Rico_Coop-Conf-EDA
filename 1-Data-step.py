@@ -4,10 +4,12 @@ import glob
 import xarray as xr
 import os
 import multiprocessing
-from dask.delayed import delayed
-from dask import compute
-from dask.distributed import Client
-
+import requests
+from bs4 import BeautifulSoup
+from dask import delayed, compute
+# from dask.distributed import Client
+from distributed import Client
+import urllib.request 
 
 def get_sst(file_loc, region, region_coords):
     ### Creat new df and open file
@@ -99,6 +101,8 @@ def get_chl(file_, north_region, south_region, east_region, west_region):
     return outdat
 
 
+
+
 def get_wind(dat):
     buoy_id = dat[0]
     year = dat[1]
@@ -118,14 +122,75 @@ def get_wind(dat):
 
 
 
+def download_ssh_data():
+    url = "https://podaac.jpl.nasa.gov/ws/search/granule?datasetId=PODAAC-SLREF-CDRV2&startTime=2009-12-01&endTime=2019-12-31&itemsPerPage=2000&sortBy=ascending&format=html&pretty=true"
+    reqs = requests.get(url)
+    soup = BeautifulSoup(reqs.text, 'lxml')   
+    files = []
+    for heading in soup.find_all(["h2"]):
+        files.extend(heading)
+        
+    files = sorted(files)
+    
+    for file_ in files:
+        filename = f"https://podaac-opendap.jpl.nasa.gov/opendap/allData/merged_alt/L4/cdr_grid/{file_}"
+        urllib.request.urlretrieve(filename, f"/data2/SSH/PODACC/{file_}")
+    print(file_)
+        
+        
+
+def get_ssh(file_, north_region, south_region, east_region, west_region):
+    print(file_)
+    ds = xr.open_dataset(file_)
+    df = ds.to_dataframe().reset_index()
+
+    df = df[['Time', 'Latitude', 'Longitude', 'SLA', 'SLA_ERR']]
+    df = df.rename(columns={'Time': 'date', 'Latitude': 'lat', 'Longitude': 'lon', 'SLA': 'sla', 'SLA_ERR': 'sla_err'})
+
+    ### Rework -360 longitude
+    df.loc[:, 'lon'] = np.where(df['lon'] > 180, -360 + df['lon'], df['lon'])
+    df = df.dropna()
+
+    year = pd.to_datetime(df.date).dt.year
+    month = pd.to_datetime(df.date).dt.month
+    day = pd.to_datetime(df.date).dt.day
+
+    ### Subset Northern Region
+    ndf = df[(df['lat'] >= north_region[1]) & (df['lat'] <= north_region[3])]
+    ndf = ndf[(ndf['lon'] >= north_region[0]) & (ndf['lon'] <= north_region[2])]
+    ndf = ndf.assign(region = "North", year = year, month=month, day=day)    
+
+    ### Subset Southern Region
+    sdf = df[(df['lat'] >= south_region[1]) & (df['lat'] <= south_region[3])]
+    sdf = sdf[(sdf['lon'] >= south_region[0]) & (sdf['lon'] <= south_region[2])]
+    sdf = sdf.assign(region = "South", year = year, month=month, day=day)   
+
+    ### Subset Eastern Region
+    edf = df[(df['lat'] >= east_region[1]) & (df['lat'] <= east_region[3])]
+    edf = edf[(edf['lon'] >= east_region[0]) & (edf['lon'] <= east_region[2])]
+    edf = edf.assign(region = "East", year = year, month=month, day=day)   
+
+    ### Subset Western Region
+    wdf = df[(df['lat'] >= west_region[1]) & (df['lat'] <= west_region[3])]
+    wdf = wdf[(wdf['lon'] >= west_region[0]) & (wdf['lon'] <= west_region[2])]
+    wdf = wdf.assign(region = "West", year = year, month=month, day=day)   
+
+    ### Bind Regions
+    outdat = pd.concat([ndf, sdf, edf, wdf]).reset_index(drop=True)
+    outdat = outdat.assign(date = outdat['date'].dt.normalize())
+    outdat = outdat.drop_duplicates()
+    return outdat
+
+
+
+
+
 
 if __name__ == "__main__":
     ### Dask setup    
-        # NCORES = multiprocessing.cpu_count() - 1
-
-    NCORES = 10
+    NCORES = multiprocessing.cpu_count() - 1
+    NCORES = 30
     client = Client(n_workers=NCORES, threads_per_worker=1)
-
 
     ### Puerto Rico Regions
     North = [-67.6538, 18.491170, -65.4236, 19.491170]
@@ -134,12 +199,12 @@ if __name__ == "__main__":
     East = [-65.929,  17.7236, -64.929, 18.74117]
 
     # ### Get SST
-    # sst_dat = proc_sst()    
-    # sst_dat.to_csv('./data/PR_SST_daily_regional_2010-2019.csv', index=False)
+    sst_dat = proc_sst()    
+    sst_dat.to_csv('./data/PR_SST_daily_regional_2010-2019.csv', index=False)
+
 
     ### Get CHL
     files = sorted(glob.glob('/data2/CHL/NC/DAILY/*.nc'))
-    # files = files[0:5]    
     results = compute([delayed(get_chl)(file_, North, South, East, West) for file_ in files])
     chl_dat = pd.concat([d for d in results[0][:]])
     chl_dat = chl_dat.reset_index(drop=True)
@@ -158,6 +223,8 @@ if __name__ == "__main__":
     wlst_ = [(x, y, "West") for x in wbuoys for y in range(2010, 2019)]
     elst_ = [(x, y, "East") for x in ebuoys for y in range(2010, 2019)]
 
+
+
     ### Build list to compress
     lst_ = nlst_ + slst_ + wlst_ + elst_
     results = compute([delayed(get_wind)(g) for g in lst_])
@@ -175,6 +242,24 @@ if __name__ == "__main__":
     
 
 
+    ### Get Sea Surface Height
+    # Download PODACC files
+    # download_ssh_data()
+    
+    # Get files from download
+    files = glob.glob('/data2/SSH/PODACC/*.nc')
+    
+    ### Build list to compress
+    # results = [get_ssh(file_, North, South, East, West) for file_ in files]
+    results = compute([delayed(get_ssh)(file_, North, South, East, West) for file_ in files])
+    ssh_dat = pd.concat([d for d in results[0][:]]).reset_index(drop=True)
+    ssh_dat.to_csv('data/PR_SSH_5day_regional_2010-2019', index=False)
+
+
+
+
+
+
 
 
 
@@ -187,6 +272,7 @@ if __name__ == "__main__":
     wind = pd.read_csv('data/PR_Wind_daily_regional_2010-2019', index_col=False)
     hurr = pd.read_csv('data/PR_Hurricane_daily_regional_2010-2019', index_col=False)
     noi = pd.read_csv('data/cciea_OC_NOI.csv', index_col=False, skiprows=1, usecols=[0, 1])
+    ssh = pd.read_csv('data/PR_SSH_5day_regional_2010-2019', index_col=False)
     
 
     # SST
@@ -207,14 +293,14 @@ if __name__ == "__main__":
     # NOI
     noi.columns = ['date', 'noi']
     noi = noi.assign(month = pd.to_datetime(noi['date']).dt.month, year = pd.to_datetime(noi['date']).dt.year)
-    noi = noi[noi['year'] >= 2010].groupby('year').agg({'noi': 'sum'}).reset_index()
+    noi = noi[noi['year'] >= 2010].groupby('year').agg({'noi': 'mean'}).reset_index()
 
 
+    # SSH
+    ssh = ssh[ssh['year'] >= 2010].groupby(['year', 'region']).agg({'sla': 'mean', 'sla_err': 'mean'}).reset_index()
 
 
-
-
-
+    # ------------------------------------------------
     # Regression data
     regdat = pd.read_csv('data/effort_region_conflict_reg_data.csv')
     regdat = regdat.groupby(['year', 'region']).agg({'effort': 'sum', 'coop_sum': 'sum', 'conf_sum': 'sum'}).reset_index()
@@ -236,6 +322,7 @@ if __name__ == "__main__":
     regdat = regdat.merge(wind, how='left', on=['year', 'region'])
     regdat = regdat.merge(hurr, how='left', on=['year'])
     regdat = regdat.merge(noi, how='left', on=['year'])
+    regdat = regdat.merge(ssh, how='left', on=['year', 'region'])
 
 
     regdat.to_csv("data/PR_regdat.csv", index=False)

@@ -7,22 +7,22 @@ unique(regdat$cc_ratio)
 regdat = drop_na(regdat)
 
 
-mod1 = felm(log(1 + effort) ~ sst + chlor_a + WSPD + noi, data = regdat)
+mod1 = felm(log(1 + effort) ~ sst + sla + chlor_a + WSPD + noi, data = regdat)
 summary(mod1)
 
-mod2 = felm(log(1 + effort) ~ sst + chlor_a + WSPD + noi + cc_ratio, data = regdat)
+mod2 = felm(log(1 + effort) ~ sst + sla + chlor_a + WSPD + noi + cc_ratio, data = regdat)
 summary(mod2)
 
-mod3 = felm(log(1 + effort) ~ sst + chlor_a + WSPD + noi + cc_ratio + hurricane, data = regdat)
+mod3 = felm(log(1 + effort) ~ sst + sla + chlor_a + WSPD + noi + cc_ratio + hurricane, data = regdat)
 summary(mod3)
 
-mod4 = felm(log(1 + effort) ~ sst + chlor_a + WSPD + noi + cc_ratio + hurricane | region, data = regdat)
+mod4 = felm(log(1 + effort) ~ sst + sla + chlor_a + WSPD + noi + cc_ratio + hurricane | region, data = regdat)
 summary(mod4)
 
-mod5 = felm(log(1 + effort) ~ sst + chlor_a + WSPD + noi + cc_ratio + hurricane + year | region, data = regdat)
+mod5 = felm(log(1 + effort) ~ sst + sla +  chlor_a + WSPD + noi + cc_ratio + hurricane + year | region, data = regdat)
 summary(mod5)
 
-mod6 = felm(log(1 + effort) ~ sst + chlor_a + WSPD + noi + cc_ratio + hurricane | year + region, data = regdat)
+mod6 = felm(log(1 + effort) ~ sst + sla + chlor_a + WSPD + noi + cc_ratio + hurricane | year + region, data = regdat)
 summary(mod6)
 
 
@@ -35,10 +35,10 @@ stargazer(mod1, mod2, mod3, mod4, mod5, mod6,
                              "Log(Fishing Effort)", "Log(Fishing Effort)"),
           model.names = FALSE, 
           omit.stat = c("ser", "f", "rsq"),
-          covariate.labels = c("SST", "CHL", "Wind Speed", "NOI", "Conflict/Coop Ratio", "Hurricane", "Trend"),
+          covariate.labels = c("SST", "SSH", "CHL", "Wind Speed", "NOI", "Conflict/Coop Ratio", "Hurricane", "Trend"),
           # apply.coef = multiply.100, apply.se = multiply.100,
           table.layout ="=dcm#-t-as=n",
           font.size = "footnotesize",
           add.lines = list(c("Region FE", "--", "--", "--", "Yes", "Yes", "Yes"),
-                           c("Year FE", "--", "--", "--", "--", "Yes", "Yes")),
+                           c("Year FE", "--", "--", "--", "--", "--", "Yes")),
                            notes.append = FALSE, notes.align = "r")

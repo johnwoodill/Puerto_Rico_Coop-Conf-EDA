@@ -2,6 +2,8 @@ library(tidyverse)
 library(lfe)
 library(stargazer)
 
+setwd("~/Projects/Puerto_Rico_Coop-Conf-EDA/")
+
 regdat = read_csv("~/Projects/Puerto_Rico_Coop-Conf-EDA/data/PR_regdat.csv")
 unique(regdat$cc_ratio)
 regdat = drop_na(regdat)

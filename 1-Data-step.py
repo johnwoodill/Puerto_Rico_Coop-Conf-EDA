@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import glob
-import xarray as xr
+# import xarray as xr
 import os
 import multiprocessing
 import requests
@@ -183,77 +183,95 @@ def get_ssh(file_, north_region, south_region, east_region, west_region):
 
 
 
-
-
+def proc_cc(start_date, end_date, cc_int, n_region):
+    # start_date = ccdat.sdate[0]
+    # end_date = ccdat.edate[0]
+    # cc_int = ccdat.intensity[0]
+    # n_region = ccdat.region[2]
+    
+    outdat = pd.DataFrame()
+    for region_ in n_region.split(','):
+        region_ = region_.strip()
+        indat = pd.DataFrame({'date': pd.DatetimeIndex(pd.date_range(start_date, end_date, freq='M').strftime("%Y-%m"))})    
+        indat = indat.assign(year = indat.date.dt.year,
+                             month = indat.date.dt.month,
+                             region = region_,
+                             intensity = cc_int)
+        
+        outdat = pd.concat([outdat, indat])
+    return outdat
+    
+    
+    
 
 if __name__ == "__main__":
-    ### Dask setup    
-    NCORES = multiprocessing.cpu_count() - 1
-    NCORES = 30
-    client = Client(n_workers=NCORES, threads_per_worker=1)
+    # ### Dask setup    
+    # NCORES = multiprocessing.cpu_count() - 1
+    # NCORES = 30
+    # client = Client(n_workers=NCORES, threads_per_worker=1)
 
-    ### Puerto Rico Regions
-    North = [-67.6538, 18.491170, -65.4236, 19.491170]
-    West = [-68.1034, 17.7236, -67.1034, 18.74117]
-    South = [-67.6538, 17.0288, -65.4236, 18.0288]
-    East = [-65.929,  17.7236, -64.929, 18.74117]
+    # ### Puerto Rico Regions
+    # North = [-67.6538, 18.491170, -65.4236, 19.491170]
+    # West = [-68.1034, 17.7236, -67.1034, 18.74117]
+    # South = [-67.6538, 17.0288, -65.4236, 18.0288]
+    # East = [-65.929,  17.7236, -64.929, 18.74117]
 
-    # ### Get SST
-    sst_dat = proc_sst()    
-    sst_dat.to_csv('./data/PR_SST_daily_regional_2010-2019.csv', index=False)
-
-
-    ### Get CHL
-    files = sorted(glob.glob('/data2/CHL/NC/DAILY/*.nc'))
-    results = compute([delayed(get_chl)(file_, North, South, East, West) for file_ in files])
-    chl_dat = pd.concat([d for d in results[0][:]])
-    chl_dat = chl_dat.reset_index(drop=True)
-    chl_dat.to_csv('data/PR_CHL_daily_regional_2010_2019.csv', index=False)
+    # # ### Get SST
+    # sst_dat = proc_sst()    
+    # sst_dat.to_csv('./data/PR_SST_daily_regional_2010-2019.csv', index=False)
 
 
-
-    ### Get Wind data
-    # Build data frame to loop through
-    nbuoys = ["sjnp4", "arop4", "41053"]
-    sbuoys = ["mgip4", "42085"]
-    wbuoys = ["ptrp4", "41115", "mgzp4"]
-    ebuoys = ["41056", "41052", "clbp4", "espp4"]
-    nlst_ = [(x, y, "North") for x in nbuoys for y in range(2010, 2019)]
-    slst_ = [(x, y, "South") for x in sbuoys for y in range(2010, 2019)]
-    wlst_ = [(x, y, "West") for x in wbuoys for y in range(2010, 2019)]
-    elst_ = [(x, y, "East") for x in ebuoys for y in range(2010, 2019)]
+    # ### Get CHL
+    # files = sorted(glob.glob('/data2/CHL/NC/DAILY/*.nc'))
+    # results = compute([delayed(get_chl)(file_, North, South, East, West) for file_ in files])
+    # chl_dat = pd.concat([d for d in results[0][:]])
+    # chl_dat = chl_dat.reset_index(drop=True)
+    # chl_dat.to_csv('data/PR_CHL_daily_regional_2010_2019.csv', index=False)
 
 
 
-    ### Build list to compress
-    lst_ = nlst_ + slst_ + wlst_ + elst_
-    results = compute([delayed(get_wind)(g) for g in lst_])
-    wind_dat = pd.concat([d for d in results[0][:]]).reset_index(drop=True)
-    wind_dat.to_csv('data/PR_Wind_daily_regional_2010-2019', index=False)
+    # ### Get Wind data
+    # # Build data frame to loop through
+    # nbuoys = ["sjnp4", "arop4", "41053"]
+    # sbuoys = ["mgip4", "42085"]
+    # wbuoys = ["ptrp4", "41115", "mgzp4"]
+    # ebuoys = ["41056", "41052", "clbp4", "espp4"]
+    # nlst_ = [(x, y, "North") for x in nbuoys for y in range(2010, 2019)]
+    # slst_ = [(x, y, "South") for x in sbuoys for y in range(2010, 2019)]
+    # wlst_ = [(x, y, "West") for x in wbuoys for y in range(2010, 2019)]
+    # elst_ = [(x, y, "East") for x in ebuoys for y in range(2010, 2019)]
 
 
-    ### Hurricane data
-    # August 2014; August 2015; Sept 2017; July 2018; August 2019; Sept 2019
-    hurr_events = ['2014-08', '2015-08', '2017-09', '2018-07', '2019-08', '2019-09']
-    dates = [i.strftime("%Y-%m") for i in pd.date_range(start="2010-01-01", end="2019-12-01", freq='MS')]
-    hurr_dat = pd.DataFrame({'date': dates, "hurricane": 0})
-    hurr_dat = hurr_dat.assign(hurricane = np.where(hurr_dat['date'].isin(hurr_events), 1, 0))
-    hurr_dat.to_csv('data/PR_Hurricane_daily_regional_2010-2019', index=False)
+
+    # ### Build list to compress
+    # lst_ = nlst_ + slst_ + wlst_ + elst_
+    # results = compute([delayed(get_wind)(g) for g in lst_])
+    # wind_dat = pd.concat([d for d in results[0][:]]).reset_index(drop=True)
+    # wind_dat.to_csv('data/PR_Wind_daily_regional_2010-2019', index=False)
+
+
+    # ### Hurricane data
+    # # August 2014; August 2015; Sept 2017; July 2018; August 2019; Sept 2019
+    # hurr_events = ['2014-08', '2015-08', '2017-09', '2018-07', '2019-08', '2019-09']
+    # dates = [i.strftime("%Y-%m") for i in pd.date_range(start="2010-01-01", end="2019-12-01", freq='MS')]
+    # hurr_dat = pd.DataFrame({'date': dates, "hurricane": 0})
+    # hurr_dat = hurr_dat.assign(hurricane = np.where(hurr_dat['date'].isin(hurr_events), 1, 0))
+    # hurr_dat.to_csv('data/PR_Hurricane_daily_regional_2010-2019', index=False)
     
 
 
-    ### Get Sea Surface Height
-    # Download PODACC files
-    # download_ssh_data()
+    # ### Get Sea Surface Height
+    # # Download PODACC files
+    # # download_ssh_data()
     
-    # Get files from download
-    files = glob.glob('/data2/SSH/PODACC/*.nc')
+    # # Get files from download
+    # files = glob.glob('/data2/SSH/PODACC/*.nc')
     
-    ### Build list to compress
-    # results = [get_ssh(file_, North, South, East, West) for file_ in files]
-    results = compute([delayed(get_ssh)(file_, North, South, East, West) for file_ in files])
-    ssh_dat = pd.concat([d for d in results[0][:]]).reset_index(drop=True)
-    ssh_dat.to_csv('data/PR_SSH_5day_regional_2010-2019', index=False)
+    # ### Build list to compress
+    # # results = [get_ssh(file_, North, South, East, West) for file_ in files]
+    # results = compute([delayed(get_ssh)(file_, North, South, East, West) for file_ in files])
+    # ssh_dat = pd.concat([d for d in results[0][:]]).reset_index(drop=True)
+    # ssh_dat.to_csv('data/PR_SSH_5day_regional_2010-2019', index=False)
 
 
 
@@ -263,66 +281,148 @@ if __name__ == "__main__":
 
 
 
-    ### -------------------------------------------------------------------------------------------
-    ### Annual estimates
+    # -------------------------------------------------------------------------
+    # Monthly estimates
 
-    ### Merge data into panel set
-    sst = pd.read_csv('./data/PR_SST_daily_regional_2010-2019.csv', index_col=False)
+    # Merge data into panel set
+    sst = pd.read_csv('data/PR_SST_daily_regional_2010-2019.csv', index_col=False)
     chl = pd.read_csv('data/PR_CHL_daily_regional_2010_2019.csv', index_col=False)
     wind = pd.read_csv('data/PR_Wind_daily_regional_2010-2019', index_col=False)
     hurr = pd.read_csv('data/PR_Hurricane_daily_regional_2010-2019', index_col=False)
     noi = pd.read_csv('data/cciea_OC_NOI.csv', index_col=False, skiprows=1, usecols=[0, 1])
     ssh = pd.read_csv('data/PR_SSH_5day_regional_2010-2019', index_col=False)
-    
 
     # SST
-    sst = sst.assign(month = pd.to_datetime(sst['date']).dt.month, year = pd.to_datetime(sst['date']).dt.year)
-    sst = sst.groupby(['year', 'region']).agg({'sst': 'mean'}).reset_index()
-    
+    sst = sst.assign(month=pd.to_datetime(sst['date']).dt.month, year=pd.to_datetime(sst['date']).dt.year)
+    sst = sst.groupby(['year', 'month', 'region']).agg({'sst': ['mean', 'var']}).reset_index()
+    sst.columns = ['year', 'month', 'region', 'sst_mean', 'sst_var']
+
     # CHL
-    chl = chl.groupby(['year', 'region']).agg({'chlor_a': 'mean'}).reset_index()
+    chl = chl.groupby(['year', 'month', 'region']).agg({'chlor_a': ['mean', 'var']}).reset_index()
+    chl.columns = ['year', 'month', 'region', 'chlor_a_mean', 'chlor_a_var']
 
     # Wind
-    wind = wind.assign(month = pd.to_datetime(wind['date']).dt.month, year = pd.to_datetime(wind['date']).dt.year)
-    wind = wind.groupby(['year', 'region']).agg({'WSPD': 'mean'}).reset_index()
+    wind = wind.assign(month=pd.to_datetime(wind['date']).dt.month, year=pd.to_datetime(wind['date']).dt.year)
+    wind = wind.groupby(['year', 'month', 'region']).agg({'WSPD': 'mean'}).reset_index()
 
     # Hurricane
-    hurr = hurr.assign(month = pd.to_datetime(hurr['date']).dt.month, year = pd.to_datetime(hurr['date']).dt.year)
+    hurr = hurr.assign(month=pd.to_datetime(hurr['date']).dt.month, year=pd.to_datetime(hurr['date']).dt.year)
     hurr['hurricane'] = np.where(hurr['hurricane'] >= 1, 1, 0)
-    
+
     # NOI
     noi.columns = ['date', 'noi']
-    noi = noi.assign(month = pd.to_datetime(noi['date']).dt.month, year = pd.to_datetime(noi['date']).dt.year)
-    noi = noi[noi['year'] >= 2010].groupby('year').agg({'noi': 'mean'}).reset_index()
-
+    noi = noi.assign(month=pd.to_datetime(noi['date']).dt.month, year=pd.to_datetime(noi['date']).dt.year)
+    noi = noi[noi['year'] >= 2010].reset_index(drop=True)
 
     # SSH
-    ssh = ssh[ssh['year'] >= 2010].groupby(['year', 'region']).agg({'sla': 'mean', 'sla_err': 'mean'}).reset_index()
-
+    ssh = ssh[ssh['year'] >= 2010].groupby(['year', 'month', 'region']).agg({'sla': 'mean', 'sla_err': 'mean'}).reset_index()
 
     # ------------------------------------------------
-    # Regression data
-    regdat = pd.read_csv('data/effort_region_conflict_reg_data.csv')
-    regdat = regdat.groupby(['year', 'region']).agg({'effort': 'sum', 'coop_sum': 'sum', 'conf_sum': 'sum'}).reset_index()
+    # Monthly Puerto Rico Data    
+    efdat = pd.read_csv('data/PR_nonconf_landings_2010_19_2021-01-07.CSV')
+    cdat = pd.read_csv('./data/Municipalities_by_region_Puerto_Rico_wideFormat.csv')
+    ccdat = pd.read_csv('data/FCCE_Master_Intensity_Expanded_zeros_excluded.csv')
     
     
-    regdat['cc_ratio'] = regdat['conf_sum'] / regdat['coop_sum']
-
-    regdat = regdat.assign(cc_ratio = np.where(regdat['coop_sum'] == 0, 0, regdat['cc_ratio']))
+    # [1] Clean Intensity data (dependent variables)
     
-    regdat['region'] = np.where(regdat['region'] == 'E', 'East', regdat['region'])
-    regdat['region'] = np.where(regdat['region'] == 'W', 'West', regdat['region'])
-    regdat['region'] = np.where(regdat['region'] == 'N', 'North', regdat['region'])
-    regdat['region'] = np.where(regdat['region'] == 'S', 'South', regdat['region'])        
-    regdat = regdat[['year', 'region', 'effort', 'cc_ratio']]
+    # Index(['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY',
+    #    'SPECIES_ITIS', 'ITIS_COMMON_NAME', 'ITIS_SCIENTIFIC_NAME',
+    #    'POUNDS_LANDED', 'ADJUSTED_POUNDS', 'trips', 'fishers'],
+    #   dtype='object')
+    
+    ccdat = ccdat[['StartDate', 'EndDate', 'DNER_Districts', 'Intensity_Score', 'CoopCon']]
+    ccdat.columns = ['sdate', 'edate', 'region', 'intensity', 'coop_con']
+    
+    # Aggregate conflict/coop and get ratio
+    ccdat2 = ccdat.apply(lambda x: proc_cc(x['sdate'], x['edate'], x['intensity'], x['region']), axis=1)
+    ccdat2 = pd.concat([x for x in ccdat2])
+    ccdat2 = ccdat2.assign(group_1 = np.where(ccdat2['intensity'] <= -1, 0, 1))
 
-    # Bind data
-    regdat = regdat.merge(sst, how='left', on=['year', 'region'])
-    regdat = regdat.merge(chl, how='left', on=['year', 'region'])
-    regdat = regdat.merge(wind, how='left', on=['year', 'region'])
-    regdat = regdat.merge(hurr, how='left', on=['year'])
-    regdat = regdat.merge(noi, how='left', on=['year'])
-    regdat = regdat.merge(ssh, how='left', on=['year', 'region'])
+    # Conflict count
+    
+    conflict = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
+    # conflict = ccdat2.groupby(['year', 'month', 'region']).apply(lambda x: (len(x[x['group_1'] == 0]))).reset_index()
+    conflict = conflict.rename(columns={conflict.columns[-1]: 'conflict'})
+
+    # Coop count
+    coop = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
+    # coop = ccdat2.groupby(['year', 'month', 'region']).apply(lambda x: (len(x[x['group_1'] == 1]))).reset_index()
+    coop = coop.rename(columns={coop.columns[-1]: 'coop'})
+
+    # Merge
+    ccdat3 = conflict.merge(coop, on=['year', 'month','region'])
+    ccdat3 = ccdat3.assign(cc_ratio1 = ccdat3['conflict'] / ccdat3['coop'])
+    
+    len(ccdat3.cc_ratio1.unique())
+    np.sum(ccdat3.cc_ratio1)
+    
+    # Check if NA or inf then set to zero
+    ccdat3.cc_ratio1.unique()
+    ccdat3 = ccdat3.replace([np.inf, -np.inf], 0)
+
+    # Filter 2010
+    ccdat3 = ccdat3[ccdat3['year'] >= 2010]
+    ccdat3 = ccdat3.assign(region = ccdat3['region'].str.title())
+    
+
+    # [2] Clean Fishing effort data
+    # Index(['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY',
+    #    'SPECIES_ITIS', 'ITIS_COMMON_NAME', 'ITIS_SCIENTIFIC_NAME',
+    #    'POUNDS_LANDED', 'ADJUSTED_POUNDS', 'trips', 'fishers'],
+    #   dtype='object')
+    
+    # Top 30 makes up 97%
+    species = efdat.groupby(['ITIS_COMMON_NAME']).agg({'POUNDS_LANDED': 'sum'}).sort_values('POUNDS_LANDED', ascending=False).head(33).reset_index()
+    species = species[~species['ITIS_COMMON_NAME'].isin(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'OCTOPUS,UNSPECIFIED'])]
+    species = species['ITIS_COMMON_NAME'].ravel()
+
+    # array(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'SNAPPER,SILK', 'SNAPPER,QUEEN',
+    #    'SNAPPER,YELLOWTAIL', 'SNAPPER,LANE', 'DOLPHINFISH',
+    #    'TRIGGERFISH,QUEEN', 'HOGFISH', 'BOXFISH,UNSPECIFIED',
+    #    'GROUPER,RED HIND', 'TUNA,BLACKFIN', 'SNAPPER,MUTTON', 'BALLYHOO',
+    #    'PARROTFISHES,UNSPECIFIED', 'SNAPPER,UNSPECIFIED',
+    #    'OCTOPUS,UNSPECIFIED', 'MACKEREL,KING', 'JACK,BAR',
+    #    'TUNA,SKIPJACK', 'MACKEREL,CERO', 'WAHOO', 'HERRING,SARDINELLA',
+    #    'TUNNY,LITTLE', 'PORGY,UNSPECIFIED', 'GRUNT,UNSPECIFIED',
+    #    'SNAPPER,CARDINAL', 'MULLET,WHITE', 'SNAPPER,VERMILION',
+    #    'GRUNT,WHITE'], dtype=object)
+    
+    # Filter top 30 species
+    efdat2 = efdat[efdat['ITIS_COMMON_NAME'].isin(species)]
+    
+    efdat2 = efdat2[['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY', 'ITIS_COMMON_NAME', 'POUNDS_LANDED', 'trips']]
+    efdat2.columns = ['year', 'month', 'county', 'species', 'pounds', 'trips']
+    efdat2 = efdat2.merge(cdat, on=['county'])
+
+    # efdat2 = efdat2.assign(region = efdat2.region.str.lower())
+    efdat2 = efdat2.drop(columns='county')
+    
+    # aggregate species
+    efdat3 = efdat2.groupby(['year', 'month', 'region']).sum().reset_index() 
+
+    # [3] Merge all data
+    regdat = efdat3.merge(ccdat3, on=['year', 'month', 'region'])
+    regdat = regdat.merge(sst, on=['year', 'month', 'region'])
+    regdat = regdat.merge(chl, on=['year', 'month', 'region'])
+    regdat = regdat.merge(wind, on=['year', 'month', 'region'])
+    regdat = regdat.merge(ssh, on=['year', 'month', 'region'])
+    regdat = regdat.merge(hurr.drop(columns='date'), on=['year', 'month'])
+    regdat = regdat.merge(noi.drop(columns='date'), on=['year', 'month'])
+    
+    regdat.to_csv('data/FULL_PR_regdat_monthly.csv', index=False)
 
 
-    regdat.to_csv("data/PR_regdat.csv", index=False)
+
+# Additional intensity ranges
+# ccdat2 = ccdat2.assign(group_1 = np.where(ccdat2['intensity'] <= -1, 0, 1),
+#                        group_2 = np.where(ccdat2['intensity'] <= -2, 0, np.where(ccdat2['intensity'] >= 2, 1, 9999)),
+#                        group_3 = np.where(ccdat2['intensity'] <= -3, 0, np.where(ccdat2['intensity'] >= 3, 1, 9999)),
+#                        group_4 = np.where(ccdat2['intensity'] <= -4, 0, np.where(ccdat2['intensity'] >= 4, 1, 9999)),
+#                        group_5 = np.where(ccdat2['intensity'] <= -5, 0, np.where(ccdat2['intensity'] >= 5, 1, 9999)))
+
+
+
+    
+    
+    

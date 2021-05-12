@@ -4,8 +4,8 @@ library(stargazer)
 
 setwd("~/Projects/Puerto_Rico_Coop-Conf-EDA/")
 
-regdat = read_csv("~/Projects/Puerto_Rico_Coop-Conf-EDA/data/PR_regdat.csv")
-unique(regdat$cc_ratio)
+regdat = as.data.frame(read_csv("~/Projects/Puerto_Rico_Coop-Conf-EDA/data/PR_regdat.csv"))
+# unique(regdat$cc_ratio)
 regdat = drop_na(regdat)
 
 
@@ -44,3 +44,12 @@ stargazer(mod1, mod2, mod3, mod4, mod5, mod6,
           add.lines = list(c("Region FE", "--", "--", "--", "Yes", "Yes", "Yes"),
                            c("Year FE", "--", "--", "--", "--", "--", "Yes")),
                            notes.append = FALSE, notes.align = "r")
+
+
+
+
+mod6 = lm(log(1+cc_ratio) ~ sst + sla + chlor_a + WSPD + effort + hurricane  + factor(year) + factor(region), data = regdat)
+summary(mod6)
+
+round(predict(mod6)*100, 0)
+

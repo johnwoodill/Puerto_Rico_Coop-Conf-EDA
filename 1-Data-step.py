@@ -290,6 +290,7 @@ if __name__ == "__main__":
     wind = pd.read_csv('data/PR_Wind_daily_regional_2010-2019', index_col=False)
     hurr = pd.read_csv('data/PR_Hurricane_daily_regional_2010-2019', index_col=False)
     noi = pd.read_csv('data/cciea_OC_NOI.csv', index_col=False, skiprows=1, usecols=[0, 1])
+    soi = pd.read_csv('data/SOI_data.csv')
     ssh = pd.read_csv('data/PR_SSH_5day_regional_2010-2019', index_col=False)
 
     # SST
@@ -314,6 +315,13 @@ if __name__ == "__main__":
     noi = noi.assign(month=pd.to_datetime(noi['date']).dt.month, year=pd.to_datetime(noi['date']).dt.year)
     noi = noi[noi['year'] >= 2010].reset_index(drop=True)
 
+    # SOI
+    soi = soi.assign(year = soi['date'].astype(str).str[0:4],
+                     month = soi['date'].astype(str).str[4:6])
+    soi = soi.assign(year = soi['year'].astype(int),
+                     month = soi['month'].astype(int))
+    soi = soi.rename(columns={'value': 'soi'})
+    
     # SSH
     ssh = ssh[ssh['year'] >= 2010].groupby(['year', 'month', 'region']).agg({'sla': 'mean', 'sla_err': 'mean'}).reset_index()
 
@@ -322,8 +330,7 @@ if __name__ == "__main__":
     efdat = pd.read_csv('data/PR_nonconf_landings_2010_19_2021-01-07.CSV')
     cdat = pd.read_csv('./data/Municipalities_by_region_Puerto_Rico_wideFormat.csv')
     ccdat = pd.read_csv('data/FCCE_Master_Intensity_Expanded_zeros_excluded.csv')
-    
-    
+        
     # [1] Clean Intensity data (dependent variables)
     
     # Index(['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY',
@@ -340,43 +347,66 @@ if __name__ == "__main__":
     ccdat2 = ccdat2.assign(group_1 = np.where(ccdat2['intensity'] <= -1, 0, 1))
 
     # Conflict count
+    conflict_count = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
+    conflict_sum = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['intensity'].sum().abs().reset_index()
     
-    conflict = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
-    # conflict = ccdat2.groupby(['year', 'month', 'region']).apply(lambda x: (len(x[x['group_1'] == 0]))).reset_index()
-    conflict = conflict.rename(columns={conflict.columns[-1]: 'conflict'})
+    conflict_count = conflict_count.rename(columns={conflict_count.columns[-1]: 'conflict_count'})
+    conflict_sum = conflict_sum.rename(columns={conflict_sum.columns[-1]: 'conflict_sum'})
 
     # Coop count
-    coop = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
-    # coop = ccdat2.groupby(['year', 'month', 'region']).apply(lambda x: (len(x[x['group_1'] == 1]))).reset_index()
-    coop = coop.rename(columns={coop.columns[-1]: 'coop'})
+    coop_count = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
+    coop_sum = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['intensity'].sum().abs().reset_index()
+    
+    coop_count = coop_count.rename(columns={coop_count.columns[-1]: 'coop_count'})
+    coop_sum = coop_sum.rename(columns={coop_sum.columns[-1]: 'coop_sum'})
 
     # Merge
-    ccdat3 = conflict.merge(coop, on=['year', 'month','region'])
-    ccdat3 = ccdat3.assign(cc_ratio1 = ccdat3['conflict'] / ccdat3['coop'])
+    ccdat3 = conflict_count.merge(conflict_sum, on=['year', 'month','region'])
+    ccdat3 = ccdat3.merge(coop_count, on=['year', 'month','region'])
+    ccdat3 = ccdat3.merge(coop_sum, on=['year', 'month','region'])
     
-    len(ccdat3.cc_ratio1.unique())
-    np.sum(ccdat3.cc_ratio1)
+    ccdat3 = ccdat3.assign(cc_ratio_count = ccdat3['conflict_count'] / ccdat3['coop_count'])
+    ccdat3 = ccdat3.assign(cc_ratio_sum = ccdat3['conflict_sum'] / ccdat3['coop_sum'])
     
+    len(ccdat3.cc_ratio_sum.unique())
+    len(ccdat3.cc_ratio_count.unique())
+        
     # Check if NA or inf then set to zero
-    ccdat3.cc_ratio1.unique()
+    ccdat3.cc_ratio_count.unique()
     ccdat3 = ccdat3.replace([np.inf, -np.inf], 0)
 
     # Filter 2010
     ccdat3 = ccdat3[ccdat3['year'] >= 2010]
     ccdat3 = ccdat3.assign(region = ccdat3['region'].str.title())
     
-
     # [2] Clean Fishing effort data
     # Index(['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY',
     #    'SPECIES_ITIS', 'ITIS_COMMON_NAME', 'ITIS_SCIENTIFIC_NAME',
     #    'POUNDS_LANDED', 'ADJUSTED_POUNDS', 'trips', 'fishers'],
     #   dtype='object')
     
-    # Top 30 makes up 97%
     species = efdat.groupby(['ITIS_COMMON_NAME']).agg({'POUNDS_LANDED': 'sum'}).sort_values('POUNDS_LANDED', ascending=False).head(33).reset_index()
     species = species[~species['ITIS_COMMON_NAME'].isin(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'OCTOPUS,UNSPECIFIED'])]
     species = species['ITIS_COMMON_NAME'].ravel()
 
+    # Calc perc catch from subset
+    fil_spec = efdat[efdat['ITIS_COMMON_NAME'].isin(species)].groupby('YEAR_LANDED')['ADJUSTED_POUNDS'].sum().reset_index()
+    full_spec = efdat.groupby('YEAR_LANDED')['ADJUSTED_POUNDS'].sum().reset_index()
+    calc_perc = fil_spec.merge(full_spec, on='YEAR_LANDED')                      
+    calc_perc = calc_perc.assign(perc = calc_perc['ADJUSTED_POUNDS_x'] /  calc_perc['ADJUSTED_POUNDS_y'])
+    
+#        YEAR_LANDED  ADJUSTED_POUNDS_x  ADJUSTED_POUNDS_y      perc
+# 0         2010       1.334739e+06       1.857560e+06  0.718544
+# 1         2011       1.033816e+06       1.549942e+06  0.667003
+# 2         2012       1.349670e+06       2.092686e+06  0.644946
+# 3         2013       8.970195e+05       1.477108e+06  0.607281
+# 4         2014       1.185775e+06       1.847903e+06  0.641687
+# 5         2015       1.208846e+06       1.918117e+06  0.630226
+# 6         2016       1.098157e+06       1.884955e+06  0.582590
+# 7         2017       7.714999e+05       1.308595e+06  0.589563
+# 8         2018       9.707479e+05       1.825380e+06  0.531806
+# 9         2019       1.261108e+06       1.928243e+06  0.654019
+    
     # array(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'SNAPPER,SILK', 'SNAPPER,QUEEN',
     #    'SNAPPER,YELLOWTAIL', 'SNAPPER,LANE', 'DOLPHINFISH',
     #    'TRIGGERFISH,QUEEN', 'HOGFISH', 'BOXFISH,UNSPECIFIED',
@@ -408,8 +438,9 @@ if __name__ == "__main__":
     regdat = regdat.merge(wind, on=['year', 'month', 'region'])
     regdat = regdat.merge(ssh, on=['year', 'month', 'region'])
     regdat = regdat.merge(hurr.drop(columns='date'), on=['year', 'month'])
-    regdat = regdat.merge(noi.drop(columns='date'), on=['year', 'month'])
+    regdat = regdat.merge(soi.drop(columns='date'), on=['year', 'month'])
     
+    print("Saving: 'data/FULL_PR_regdat_monthly.csv'")
     regdat.to_csv('data/FULL_PR_regdat_monthly.csv', index=False)
 
 

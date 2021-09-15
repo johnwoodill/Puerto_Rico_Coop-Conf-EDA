@@ -11,6 +11,8 @@ from dask import delayed, compute
 from distributed import Client
 import urllib.request 
 
+
+#%%
 def get_sst(file_loc, region, region_coords):
     ### Creat new df and open file
     ds = xr.open_dataset(file_loc)
@@ -30,7 +32,7 @@ def get_sst(file_loc, region, region_coords):
     return df
 
 
-
+#%%
 def proc_sst():
     ### SST
     files = sorted(glob.glob('/data2/SST/NOAA_ESRL/DAILY/*.nc'))
@@ -64,6 +66,7 @@ def proc_sst():
     return retdat
 
 
+#%%
 def get_chl(file_, north_region, south_region, east_region, west_region):
     ### Get year-day
     year_day = os.path.splitext(os.path.basename(file_))[0].split('.')[0][-7:8]
@@ -102,7 +105,7 @@ def get_chl(file_, north_region, south_region, east_region, west_region):
 
 
 
-
+#%%
 def get_wind(dat):
     buoy_id = dat[0]
     year = dat[1]
@@ -121,7 +124,7 @@ def get_wind(dat):
             continue
 
 
-
+#%%
 def download_ssh_data():
     url = "https://podaac.jpl.nasa.gov/ws/search/granule?datasetId=PODAAC-SLREF-CDRV2&startTime=2009-12-01&endTime=2019-12-31&itemsPerPage=2000&sortBy=ascending&format=html&pretty=true"
     reqs = requests.get(url)
@@ -138,7 +141,7 @@ def download_ssh_data():
     print(file_)
         
         
-
+#%%
 def get_ssh(file_, north_region, south_region, east_region, west_region):
     print(file_)
     ds = xr.open_dataset(file_)
@@ -182,7 +185,7 @@ def get_ssh(file_, north_region, south_region, east_region, west_region):
     return outdat
 
 
-
+#%%
 def proc_cc(start_date, end_date, cc_int, n_region):
     # start_date = ccdat.sdate[0]
     # end_date = ccdat.edate[0]
@@ -203,7 +206,7 @@ def proc_cc(start_date, end_date, cc_int, n_region):
     
     
     
-
+#%%
 if __name__ == "__main__":
     # ### Dask setup    
     # NCORES = multiprocessing.cpu_count() - 1
@@ -275,6 +278,17 @@ if __name__ == "__main__":
 
 
 
+    # Get area of region
+    North = [-67.6538, 18.491170, -65.4236, 19.491170]
+    West = [-68.1034, 17.7236, -67.1034, 18.74117]
+    South = [-67.6538, 17.0288, -65.4236, 18.0288]
+    East = [-65.929,  17.7236, -64.929, 18.74117]
+
+    area_df = pd.DataFrame({'region': ["North", "West", "South", "East"],
+                            'area': [(North[2] - North[0]) * (North[3] - North[1]),
+                                    (West[2] - West[0]) * (West[3] - West[1]),
+                                    (South[2] - South[0]) * (South[3] - South[1]),
+                                    (East[2] - East[0]) * (East[3] - East[1])]})
 
 
 
@@ -288,9 +302,9 @@ if __name__ == "__main__":
     sst = pd.read_csv('data/PR_SST_daily_regional_2010-2019.csv', index_col=False)
     chl = pd.read_csv('data/PR_CHL_daily_regional_2010_2019.csv', index_col=False)
     wind = pd.read_csv('data/PR_Wind_daily_regional_2010-2019', index_col=False)
-    hurr = pd.read_csv('data/PR_Hurricane_daily_regional_2010-2019', index_col=False)
-    noi = pd.read_csv('data/cciea_OC_NOI.csv', index_col=False, skiprows=1, usecols=[0, 1])
-    soi = pd.read_csv('data/SOI_data.csv')
+    # hurr = pd.read_csv('data/PR_Hurricane_daily_regional_2010-2019', index_col=False)
+    hurr = pd.read_csv('data/hurricanes_138km.csv', index_col=False)
+    noi = pd.read_csv('data/NOI_Index.csv')
     ssh = pd.read_csv('data/PR_SSH_5day_regional_2010-2019', index_col=False)
 
     # SST
@@ -307,20 +321,8 @@ if __name__ == "__main__":
     wind = wind.groupby(['year', 'month', 'region']).agg({'WSPD': 'mean'}).reset_index()
 
     # Hurricane
-    hurr = hurr.assign(month=pd.to_datetime(hurr['date']).dt.month, year=pd.to_datetime(hurr['date']).dt.year)
-    hurr['hurricane'] = np.where(hurr['hurricane'] >= 1, 1, 0)
-
-    # NOI
-    noi.columns = ['date', 'noi']
-    noi = noi.assign(month=pd.to_datetime(noi['date']).dt.month, year=pd.to_datetime(noi['date']).dt.year)
-    noi = noi[noi['year'] >= 2010].reset_index(drop=True)
-
-    # SOI
-    soi = soi.assign(year = soi['date'].astype(str).str[0:4],
-                     month = soi['date'].astype(str).str[4:6])
-    soi = soi.assign(year = soi['year'].astype(int),
-                     month = soi['month'].astype(int))
-    soi = soi.rename(columns={'value': 'soi'})
+    # hurr = hurr.assign(month=pd.to_datetime(hurr['date']).dt.month, year=pd.to_datetime(hurr['date']).dt.year)
+    # hurr['hurricane'] = np.where(hurr['hurricane'] >= 1, 1, 0)
     
     # SSH
     ssh = ssh[ssh['year'] >= 2010].groupby(['year', 'month', 'region']).agg({'sla': 'mean', 'sla_err': 'mean'}).reset_index()
@@ -330,6 +332,8 @@ if __name__ == "__main__":
     efdat = pd.read_csv('data/PR_nonconf_landings_2010_19_2021-01-07.CSV')
     cdat = pd.read_csv('./data/Municipalities_by_region_Puerto_Rico_wideFormat.csv')
     ccdat = pd.read_csv('data/FCCE_Master_Intensity_Expanded_zeros_excluded.csv')
+
+
         
     # [1] Clean Intensity data (dependent variables)
     
@@ -344,29 +348,44 @@ if __name__ == "__main__":
     # Aggregate conflict/coop and get ratio
     ccdat2 = ccdat.apply(lambda x: proc_cc(x['sdate'], x['edate'], x['intensity'], x['region']), axis=1)
     ccdat2 = pd.concat([x for x in ccdat2])
+
+    # Keep full df
+    main_ccdat2 = ccdat2
+    main_ccdat2 = main_ccdat2[main_ccdat2['year'] >= 2010]
+    main_ccdat2 = main_ccdat2.assign(region = main_ccdat2['region'].str.title())
+
+    # Aggreagete df
     ccdat2 = ccdat2.assign(group_1 = np.where(ccdat2['intensity'] <= -1, 0, 1))
 
     # Conflict count
     conflict_count = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
-    conflict_sum = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['intensity'].sum().abs().reset_index()
+    conflict_sum = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['intensity'].sum().reset_index()
+    conflict_mean = ccdat2[ccdat2['group_1'] == 0].groupby(['year', 'month', 'region'])['intensity'].mean().abs().reset_index()
     
     conflict_count = conflict_count.rename(columns={conflict_count.columns[-1]: 'conflict_count'})
     conflict_sum = conflict_sum.rename(columns={conflict_sum.columns[-1]: 'conflict_sum'})
+    conflict_mean = conflict_mean.rename(columns={conflict_mean.columns[-1]: 'conflict_mean'})
 
     # Coop count
     coop_count = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['group_1'].count().reset_index()
-    coop_sum = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['intensity'].sum().abs().reset_index()
+    coop_sum = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['intensity'].sum().reset_index()
+    coop_mean = ccdat2[ccdat2['group_1'] == 1].groupby(['year', 'month', 'region'])['intensity'].mean().abs().reset_index()
     
     coop_count = coop_count.rename(columns={coop_count.columns[-1]: 'coop_count'})
     coop_sum = coop_sum.rename(columns={coop_sum.columns[-1]: 'coop_sum'})
-
+    coop_mean = coop_mean.rename(columns={coop_mean.columns[-1]: 'coop_mean'})
+    
     # Merge
     ccdat3 = conflict_count.merge(conflict_sum, on=['year', 'month','region'])
+    ccdat3 = ccdat3.merge(conflict_mean, on=['year', 'month','region'])
     ccdat3 = ccdat3.merge(coop_count, on=['year', 'month','region'])
     ccdat3 = ccdat3.merge(coop_sum, on=['year', 'month','region'])
-    
+    ccdat3 = ccdat3.merge(coop_mean, on=['year', 'month','region'])
+
+    # Get ratios    
     ccdat3 = ccdat3.assign(cc_ratio_count = ccdat3['conflict_count'] / ccdat3['coop_count'])
     ccdat3 = ccdat3.assign(cc_ratio_sum = ccdat3['conflict_sum'] / ccdat3['coop_sum'])
+    ccdat3 = ccdat3.assign(cc_ratio_mean = ccdat3['conflict_mean'] / ccdat3['coop_mean'])
     
     len(ccdat3.cc_ratio_sum.unique())
     len(ccdat3.cc_ratio_count.unique())
@@ -385,15 +404,17 @@ if __name__ == "__main__":
     #    'POUNDS_LANDED', 'ADJUSTED_POUNDS', 'trips', 'fishers'],
     #   dtype='object')
     
-    species = efdat.groupby(['ITIS_COMMON_NAME']).agg({'POUNDS_LANDED': 'sum'}).sort_values('POUNDS_LANDED', ascending=False).head(33).reset_index()
-    species = species[~species['ITIS_COMMON_NAME'].isin(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'OCTOPUS,UNSPECIFIED'])]
+    species = efdat.groupby(['ITIS_COMMON_NAME']).agg({'ADJUSTED_POUNDS': 'sum'}).sort_values('ADJUSTED_POUNDS', ascending=False).head(30).reset_index()
+    # species = species[~species['ITIS_COMMON_NAME'].isin(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'OCTOPUS,UNSPECIFIED'])]
     species = species['ITIS_COMMON_NAME'].ravel()
+    print(species)
 
     # Calc perc catch from subset
     fil_spec = efdat[efdat['ITIS_COMMON_NAME'].isin(species)].groupby('YEAR_LANDED')['ADJUSTED_POUNDS'].sum().reset_index()
     full_spec = efdat.groupby('YEAR_LANDED')['ADJUSTED_POUNDS'].sum().reset_index()
     calc_perc = fil_spec.merge(full_spec, on='YEAR_LANDED')                      
     calc_perc = calc_perc.assign(perc = calc_perc['ADJUSTED_POUNDS_x'] /  calc_perc['ADJUSTED_POUNDS_y'])
+    print(calc_perc)
     
 #        YEAR_LANDED  ADJUSTED_POUNDS_x  ADJUSTED_POUNDS_y      perc
 # 0         2010       1.334739e+06       1.857560e+06  0.718544
@@ -421,15 +442,18 @@ if __name__ == "__main__":
     # Filter top 30 species
     efdat2 = efdat[efdat['ITIS_COMMON_NAME'].isin(species)]
     
-    efdat2 = efdat2[['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY', 'ITIS_COMMON_NAME', 'POUNDS_LANDED', 'trips']]
+    efdat2 = efdat2[['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY', 'ITIS_COMMON_NAME', 'ADJUSTED_POUNDS', 'trips']]
     efdat2.columns = ['year', 'month', 'county', 'species', 'pounds', 'trips']
     efdat2 = efdat2.merge(cdat, on=['county'])
 
     # efdat2 = efdat2.assign(region = efdat2.region.str.lower())
-    efdat2 = efdat2.drop(columns='county')
+    efdat2 = efdat2.drop(columns=['county', 'species'])
     
     # aggregate species
     efdat3 = efdat2.groupby(['year', 'month', 'region']).sum().reset_index() 
+
+    # Get pricing data
+    
 
     # [3] Merge all data
     regdat = efdat3.merge(ccdat3, on=['year', 'month', 'region'])
@@ -437,11 +461,35 @@ if __name__ == "__main__":
     regdat = regdat.merge(chl, on=['year', 'month', 'region'])
     regdat = regdat.merge(wind, on=['year', 'month', 'region'])
     regdat = regdat.merge(ssh, on=['year', 'month', 'region'])
-    regdat = regdat.merge(hurr.drop(columns='date'), on=['year', 'month'])
-    regdat = regdat.merge(soi.drop(columns='date'), on=['year', 'month'])
+    # regdat = regdat.merge(hurr, on=['year', 'month', 'region'], how='left')
+    regdat = regdat.merge(hurr, on=['year', 'month', 'region'], how='left')
+    regdat = regdat.merge(noi, on=['year', 'month'])
+    regdat = regdat.merge(area_df, on=['region'])
+    
+    # Fill hurricane na to zero
+    regdat['hurricane'] = regdat.hurricane.fillna(0)
     
     print("Saving: 'data/FULL_PR_regdat_monthly.csv'")
     regdat.to_csv('data/FULL_PR_regdat_monthly.csv', index=False)
+
+
+    mregdat.groupby('intensity').count()
+    
+
+    # Keep df with all ob
+    mregdat = efdat3.merge(main_ccdat2, on=['year', 'month', 'region'])
+    mregdat = mregdat.merge(sst, on=['year', 'month', 'region'])
+    mregdat = mregdat.merge(chl, on=['year', 'month', 'region'])
+    # mregdat = mregdat.merge(wind, on=['year', 'month', 'region'])
+    # mregdat = mregdat.merge(ssh, on=['year', 'month', 'region'])
+    # regdat = regdat.merge(hurr, on=['year', 'month', 'region'], how='left')
+    mregdat = mregdat.merge(hurr, on=['year', 'month', 'region'], how='left')
+    mregdat = mregdat.merge(noi, on=['year', 'month'])
+    mregdat = mregdat.merge(area_df, on=['region'])
+    mregdat['hurricane'] = mregdat.hurricane.fillna(0)
+    
+    print("Saving: 'data/UNAGG_PR_regdat_monthly.csv'")
+    mregdat.to_csv('data/UNAGG_PR_regdat_monthly.csv', index=False)
 
 
 

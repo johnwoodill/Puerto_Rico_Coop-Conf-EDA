@@ -1,3 +1,4 @@
+#%%
 import pandas as pd
 import numpy as np
 import glob
@@ -5,10 +6,9 @@ import glob
 import os
 import multiprocessing
 import requests
-from bs4 import BeautifulSoup
 from dask import delayed, compute
 # from dask.distributed import Client
-from distributed import Client
+# from distributed import Client
 import urllib.request 
 
 
@@ -112,7 +112,7 @@ def get_wind(dat):
     region = dat[2]
     for i in range(10):
         try:
-            url = f"https://www.ndbc.noaa.gov/data/historical/stdmet/{buoy_id}h{year}.txt.gz"
+            url = f"https://www.ndbc.noaa.gov/data/historical/stsdmet/{buoy_id}h{year}.txt.gz"
             df = pd.read_csv(url, compression='gzip', sep=" ", header=0, skipinitialspace=True)
             df = df.iloc[1:]
             date = df['#YY'].astype(str) + "-" + df['MM'].astype(str) + "-" + df['DD'].astype(str)
@@ -191,7 +191,7 @@ def proc_cc(start_date, end_date, cc_int, n_region):
     # end_date = ccdat.edate[0]
     # cc_int = ccdat.intensity[0]
     # n_region = ccdat.region[2]
-    
+
     outdat = pd.DataFrame()
     for region_ in n_region.split(','):
         region_ = region_.strip()
@@ -200,11 +200,13 @@ def proc_cc(start_date, end_date, cc_int, n_region):
                              month = indat.date.dt.month,
                              region = region_,
                              intensity = cc_int)
-        
+        indat = indat[indat['year'] >= 2010]
+        indat = indat.assign(timeSeries = range(1, 1 + len(indat)))
         outdat = pd.concat([outdat, indat])
     return outdat
-    
-    
+
+
+   
     
 #%%
 if __name__ == "__main__":
@@ -332,16 +334,17 @@ if __name__ == "__main__":
     efdat = pd.read_csv('data/PR_nonconf_landings_2010_19_2021-01-07.CSV')
     cdat = pd.read_csv('./data/Municipalities_by_region_Puerto_Rico_wideFormat.csv')
     ccdat = pd.read_csv('data/FCCE_Master_Intensity_Expanded_zeros_excluded.csv')
+    # ccdat = pd.read_csv('data/FCCE_Master_Intensity_Expanded.csv')
+    pricedat = pd.read_csv('data/PR_Fish_Species_Prices_2010_2018.csv')
 
-
-        
     # [1] Clean Intensity data (dependent variables)
-    
     # Index(['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY',
     #    'SPECIES_ITIS', 'ITIS_COMMON_NAME', 'ITIS_SCIENTIFIC_NAME',
     #    'POUNDS_LANDED', 'ADJUSTED_POUNDS', 'trips', 'fishers'],
     #   dtype='object')
     
+    ccdat = ccdat.assign(year = pd.DatetimeIndex(ccdat['EndDate']).year)
+    # ccdat = ccdat[ccdat['year'] >= 2010]
     ccdat = ccdat[['StartDate', 'EndDate', 'DNER_Districts', 'Intensity_Score', 'CoopCon']]
     ccdat.columns = ['sdate', 'edate', 'region', 'intensity', 'coop_con']
     
@@ -351,7 +354,6 @@ if __name__ == "__main__":
 
     # Keep full df
     main_ccdat2 = ccdat2
-    main_ccdat2 = main_ccdat2[main_ccdat2['year'] >= 2010]
     main_ccdat2 = main_ccdat2.assign(region = main_ccdat2['region'].str.title())
 
     # Aggreagete df
@@ -376,26 +378,19 @@ if __name__ == "__main__":
     coop_mean = coop_mean.rename(columns={coop_mean.columns[-1]: 'coop_mean'})
     
     # Merge
-    ccdat3 = conflict_count.merge(conflict_sum, on=['year', 'month','region'])
-    ccdat3 = ccdat3.merge(conflict_mean, on=['year', 'month','region'])
-    ccdat3 = ccdat3.merge(coop_count, on=['year', 'month','region'])
-    ccdat3 = ccdat3.merge(coop_sum, on=['year', 'month','region'])
-    ccdat3 = ccdat3.merge(coop_mean, on=['year', 'month','region'])
+    ccdat3 = conflict_count.merge(conflict_sum, on=['year', 'month','region'], how='left')
+    ccdat3 = ccdat3.merge(conflict_mean, on=['year', 'month','region'], how='left')
+    ccdat3 = ccdat3.merge(coop_count, on=['year', 'month','region'], how='left')
+    ccdat3 = ccdat3.merge(coop_sum, on=['year', 'month','region'], how='left')
+    ccdat3 = ccdat3.merge(coop_mean, on=['year', 'month','region'], how='left')
 
     # Get ratios    
     ccdat3 = ccdat3.assign(cc_ratio_count = ccdat3['conflict_count'] / ccdat3['coop_count'])
     ccdat3 = ccdat3.assign(cc_ratio_sum = ccdat3['conflict_sum'] / ccdat3['coop_sum'])
     ccdat3 = ccdat3.assign(cc_ratio_mean = ccdat3['conflict_mean'] / ccdat3['coop_mean'])
     
-    len(ccdat3.cc_ratio_sum.unique())
-    len(ccdat3.cc_ratio_count.unique())
-        
-    # Check if NA or inf then set to zero
-    ccdat3.cc_ratio_count.unique()
-    ccdat3 = ccdat3.replace([np.inf, -np.inf], 0)
-
     # Filter 2010
-    ccdat3 = ccdat3[ccdat3['year'] >= 2010]
+    # ccdat3 = ccdat3[(ccdat3['year'] >= 2010) & (ccdat3['year'] <= 2017)]
     ccdat3 = ccdat3.assign(region = ccdat3['region'].str.title())
     
     # [2] Clean Fishing effort data
@@ -404,29 +399,36 @@ if __name__ == "__main__":
     #    'POUNDS_LANDED', 'ADJUSTED_POUNDS', 'trips', 'fishers'],
     #   dtype='object')
     
-    species = efdat.groupby(['ITIS_COMMON_NAME']).agg({'ADJUSTED_POUNDS': 'sum'}).sort_values('ADJUSTED_POUNDS', ascending=False).head(30).reset_index()
+    species = efdat.groupby(['ITIS_COMMON_NAME']).agg({'ADJUSTED_POUNDS': 'sum'}).sort_values('ADJUSTED_POUNDS', ascending=False).head(300).reset_index()
     # species = species[~species['ITIS_COMMON_NAME'].isin(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'OCTOPUS,UNSPECIFIED'])]
     species = species['ITIS_COMMON_NAME'].ravel()
     print(species)
+
+    # Get top 10 species
+    top10_species = efdat.groupby('ITIS_COMMON_NAME').sum().reset_index().sort_values('POUNDS_LANDED', ascending=False).head(10)['ITIS_COMMON_NAME']
+    efdat_top10 = efdat[efdat['ITIS_COMMON_NAME'].isin(top10_species)]
+    efdat_top10 = efdat_top10.groupby(['YEAR_LANDED', 'ITIS_COMMON_NAME']).sum().reset_index()
+    efdat_top10.to_csv('data/top10_catch_species.csv', index=False)
 
     # Calc perc catch from subset
     fil_spec = efdat[efdat['ITIS_COMMON_NAME'].isin(species)].groupby('YEAR_LANDED')['ADJUSTED_POUNDS'].sum().reset_index()
     full_spec = efdat.groupby('YEAR_LANDED')['ADJUSTED_POUNDS'].sum().reset_index()
     calc_perc = fil_spec.merge(full_spec, on='YEAR_LANDED')                      
-    calc_perc = calc_perc.assign(perc = calc_perc['ADJUSTED_POUNDS_x'] /  calc_perc['ADJUSTED_POUNDS_y'])
+    calc_perc = calc_perc.assign(perc = calc_perc['ADJUSTED_POUNDS_x'] / calc_perc['ADJUSTED_POUNDS_y'])
     print(calc_perc)
+    print(f"Average catch in sample: {np.round(calc_perc.perc.mean(), 3)*100}%")
     
-#        YEAR_LANDED  ADJUSTED_POUNDS_x  ADJUSTED_POUNDS_y      perc
-# 0         2010       1.334739e+06       1.857560e+06  0.718544
-# 1         2011       1.033816e+06       1.549942e+06  0.667003
-# 2         2012       1.349670e+06       2.092686e+06  0.644946
-# 3         2013       8.970195e+05       1.477108e+06  0.607281
-# 4         2014       1.185775e+06       1.847903e+06  0.641687
-# 5         2015       1.208846e+06       1.918117e+06  0.630226
-# 6         2016       1.098157e+06       1.884955e+06  0.582590
-# 7         2017       7.714999e+05       1.308595e+06  0.589563
-# 8         2018       9.707479e+05       1.825380e+06  0.531806
-# 9         2019       1.261108e+06       1.928243e+06  0.654019
+    #        YEAR_LANDED  ADJUSTED_POUNDS_x  ADJUSTED_POUNDS_y      perc
+    # 0         2010       1.334739e+06       1.857560e+06  0.718544
+    # 1         2011       1.033816e+06       1.549942e+06  0.667003
+    # 2         2012       1.349670e+06       2.092686e+06  0.644946
+    # 3         2013       8.970195e+05       1.477108e+06  0.607281
+    # 4         2014       1.185775e+06       1.847903e+06  0.641687
+    # 5         2015       1.208846e+06       1.918117e+06  0.630226
+    # 6         2016       1.098157e+06       1.884955e+06  0.582590
+    # 7         2017       7.714999e+05       1.308595e+06  0.589563
+    # 8         2018       9.707479e+05       1.825380e+06  0.531806
+    # 9         2019       1.261108e+06       1.928243e+06  0.654019
     
     # array(['LOBSTERS,SPINY', 'CONCH,QUEEN', 'SNAPPER,SILK', 'SNAPPER,QUEEN',
     #    'SNAPPER,YELLOWTAIL', 'SNAPPER,LANE', 'DOLPHINFISH',
@@ -439,69 +441,82 @@ if __name__ == "__main__":
     #    'SNAPPER,CARDINAL', 'MULLET,WHITE', 'SNAPPER,VERMILION',
     #    'GRUNT,WHITE'], dtype=object)
     
+    pricedat = pd.read_csv('data/PR_Fish_Species_Prices_2010_2018.csv')
+
+    # Clean pricing data
+    pricedat = pricedat.set_index('SPECIES').unstack().reset_index()
+    pricedat.columns = ['year_region', 'species', 'price']
+    pricedat = pricedat.assign(year_region = pricedat['year_region'].str.replace("-", ""))
+    pricedat = pricedat.assign(region = pricedat['year_region'].str[-1:])
+    pricedat = pricedat.assign(year = pricedat['year_region'].str[0:-1])
+    pricedat = pricedat.drop(columns=['year_region']).reset_index(drop=True)
+    pricedat = pricedat.assign(species = pricedat['species'].str.strip())
+    pricedat = pricedat.assign(price = pricedat['price'].replace("  ", '0'))
+    pricedat = pricedat.dropna()
+
+    # Convert regions to full names
+    pricedat = pricedat.assign(region = np.where(pricedat['region'] == "N", "North", pricedat['region']))
+    pricedat = pricedat.assign(region = np.where(pricedat['region'] == "S", "South", pricedat['region']))
+    pricedat = pricedat.assign(region = np.where(pricedat['region'] == "E", "East", pricedat['region']))
+    pricedat = pricedat.assign(region = np.where(pricedat['region'] == "W", "West", pricedat['region']))
+    # pricedat['species'] = pricedat['species'].astype(str)
+    pricedat['year'] = pricedat['year'].astype(int)
+    pricedat['price'] = pricedat['price'].astype(float)
+    pricedat['species'].unique()
+
+    # Average each species price
+    pricedat = pricedat.groupby(['species', 'region']).agg({'price': 'mean'}).reset_index()
+    
     # Filter top 30 species
     efdat2 = efdat[efdat['ITIS_COMMON_NAME'].isin(species)]
     
-    efdat2 = efdat2[['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY', 'ITIS_COMMON_NAME', 'ADJUSTED_POUNDS', 'trips']]
-    efdat2.columns = ['year', 'month', 'county', 'species', 'pounds', 'trips']
-    efdat2 = efdat2.merge(cdat, on=['county'])
+    efdat2 = efdat2[['YEAR_LANDED', 'MONTH_LANDED', 'LANDING_LOCATION_COUNTY', 'ITIS_COMMON_NAME', 'ADJUSTED_POUNDS', 'trips', 'fishers']]
+    efdat2.columns = ['year', 'month', 'county', 'species', 'pounds', 'trips', 'fishers']
+    efdat2 = efdat2.merge(cdat, on=['county'], how='left')
 
-    # efdat2 = efdat2.assign(region = efdat2.region.str.lower())
+    efdat2 = efdat2.assign(species = efdat2['species'].str.strip())
+
+    # Merge in prices
+    efdat2 = efdat2.merge(pricedat, on=['species', 'region'], how='left')
+
+    # Drop county and species for aggregation
     efdat2 = efdat2.drop(columns=['county', 'species'])
     
     # aggregate species
-    efdat3 = efdat2.groupby(['year', 'month', 'region']).sum().reset_index() 
+    efdat3 = efdat2.groupby(['year', 'month', 'region']).agg({'pounds': 'sum', 'trips': 'sum', 'fishers': 'sum', 'price': 'mean'})
+    efdat3 = efdat3.reset_index()
 
-    # Get pricing data
-    
+    efdat3.to_csv('data/PR_EFFORT_PRICES.csv', index=False)
 
     # [3] Merge all data
-    regdat = efdat3.merge(ccdat3, on=['year', 'month', 'region'])
-    regdat = regdat.merge(sst, on=['year', 'month', 'region'])
-    regdat = regdat.merge(chl, on=['year', 'month', 'region'])
-    regdat = regdat.merge(wind, on=['year', 'month', 'region'])
-    regdat = regdat.merge(ssh, on=['year', 'month', 'region'])
-    # regdat = regdat.merge(hurr, on=['year', 'month', 'region'], how='left')
+    regdat = efdat3.merge(ccdat3, on=['year', 'month', 'region'], how='left')
+    regdat = regdat.merge(sst, on=['year', 'month', 'region'], how='left')
+    regdat = regdat.merge(chl, on=['year', 'month', 'region'], how='left')
+    regdat = regdat.merge(wind, on=['year', 'month', 'region'], how='left')
+    regdat = regdat.merge(ssh, on=['year', 'month', 'region'], how='left')
     regdat = regdat.merge(hurr, on=['year', 'month', 'region'], how='left')
-    regdat = regdat.merge(noi, on=['year', 'month'])
-    regdat = regdat.merge(area_df, on=['region'])
-    
-    # Fill hurricane na to zero
+    regdat = regdat.merge(noi, on=['year', 'month'], how='left')
+    regdat = regdat.merge(area_df, on=['region'], how='left')
     regdat['hurricane'] = regdat.hurricane.fillna(0)
+    regdat = regdat.dropna()
     
     print("Saving: 'data/FULL_PR_regdat_monthly.csv'")
     regdat.to_csv('data/FULL_PR_regdat_monthly.csv', index=False)
 
-
-    mregdat.groupby('intensity').count()
-    
-
     # Keep df with all ob
-    mregdat = efdat3.merge(main_ccdat2, on=['year', 'month', 'region'])
-    mregdat = mregdat.merge(sst, on=['year', 'month', 'region'])
-    mregdat = mregdat.merge(chl, on=['year', 'month', 'region'])
-    # mregdat = mregdat.merge(wind, on=['year', 'month', 'region'])
-    # mregdat = mregdat.merge(ssh, on=['year', 'month', 'region'])
-    # regdat = regdat.merge(hurr, on=['year', 'month', 'region'], how='left')
+    mregdat = efdat3.merge(main_ccdat2, on=['year', 'month', 'region'], how='left')
+    mregdat = mregdat.merge(sst, on=['year', 'month', 'region'], how='left')
+    mregdat = mregdat.merge(chl, on=['year', 'month', 'region'], how='left')
+    mregdat = mregdat.merge(wind, on=['year', 'month', 'region'], how='left')
+    mregdat = mregdat.merge(ssh, on=['year', 'month', 'region'], how='left')
     mregdat = mregdat.merge(hurr, on=['year', 'month', 'region'], how='left')
-    mregdat = mregdat.merge(noi, on=['year', 'month'])
-    mregdat = mregdat.merge(area_df, on=['region'])
+    mregdat = mregdat.merge(noi, on=['year', 'month'], how='left')
+    mregdat = mregdat.merge(area_df, on=['region'], how='left')
     mregdat['hurricane'] = mregdat.hurricane.fillna(0)
+    mregdat = mregdat.dropna()
     
     print("Saving: 'data/UNAGG_PR_regdat_monthly.csv'")
     mregdat.to_csv('data/UNAGG_PR_regdat_monthly.csv', index=False)
 
 
-
-# Additional intensity ranges
-# ccdat2 = ccdat2.assign(group_1 = np.where(ccdat2['intensity'] <= -1, 0, 1),
-#                        group_2 = np.where(ccdat2['intensity'] <= -2, 0, np.where(ccdat2['intensity'] >= 2, 1, 9999)),
-#                        group_3 = np.where(ccdat2['intensity'] <= -3, 0, np.where(ccdat2['intensity'] >= 3, 1, 9999)),
-#                        group_4 = np.where(ccdat2['intensity'] <= -4, 0, np.where(ccdat2['intensity'] >= 4, 1, 9999)),
-#                        group_5 = np.where(ccdat2['intensity'] <= -5, 0, np.where(ccdat2['intensity'] >= 5, 1, 9999)))
-
-
-
-    
-    
     
